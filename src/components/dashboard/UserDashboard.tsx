@@ -6,8 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   Users, FileText, Briefcase, Plus, Settings2, Calendar, Activity, Bell, 
-  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X
+  Mail, Building2, ListTodo, CalendarClock, ClipboardList, Check, X, TrendingUp, TrendingDown, Minus, User
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { WidgetKey, WidgetLayoutConfig, DEFAULT_WIDGETS } from "./DashboardCustomizeModal";
 import { ResizableDashboard } from "./ResizableDashboard";
@@ -78,8 +80,13 @@ const compactLayoutsUtil = (layouts: WidgetLayoutConfig, visibleKeys: WidgetKey[
   return compacted;
 };
 
-const UserDashboard = () => {
+interface UserDashboardProps {
+  hideHeader?: boolean;
+}
+
+const UserDashboard = ({ hideHeader = false }: UserDashboardProps) => {
   const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isResizeMode, setIsResizeMode] = useState(false);
@@ -108,21 +115,30 @@ const UserDashboard = () => {
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
-        // Get the actual content width (excluding padding)
+        // Get computed styles to account for padding
         const styles = getComputedStyle(containerRef.current);
         const paddingLeft = parseFloat(styles.paddingLeft) || 0;
         const paddingRight = parseFloat(styles.paddingRight) || 0;
-        const contentWidth = containerRef.current.clientWidth - paddingLeft - paddingRight;
-        setContainerWidth(Math.max(320, contentWidth));
+        // Use inner width (excluding padding) for accurate grid sizing
+        const width = containerRef.current.clientWidth - paddingLeft - paddingRight;
+        setContainerWidth(Math.max(320, width));
       }
     };
-    // Use ResizeObserver for more accurate width tracking
+    
+    // ResizeObserver for container size changes
     const observer = new ResizeObserver(updateWidth);
     if (containerRef.current) {
       observer.observe(containerRef.current);
     }
+    
+    // Also listen to window resize for viewport changes
+    window.addEventListener('resize', updateWidth);
     updateWidth();
-    return () => observer.disconnect();
+    
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateWidth);
+    };
   }, []);
   
   const { data: userName } = useQuery({
@@ -144,13 +160,29 @@ const UserDashboard = () => {
     enabled: !!user?.id,
   });
 
+  // Fetch user preferences for currency
+  const { data: userPreferences } = useQuery({
+    queryKey: ['user-preferences', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('currency')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   const { data: dashboardPrefs } = useQuery({
     queryKey: ['dashboard-prefs', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
       const { data, error } = await supabase
         .from('dashboard_preferences')
-        .select('visible_widgets, card_order, layout_view')
+        .select('visible_widgets, card_order, widget_layouts, layout_view')
         .eq('user_id', user.id)
         .maybeSingle();
       if (error) throw error;
@@ -168,6 +200,12 @@ const UserDashboard = () => {
   const [widgetOrder, setWidgetOrder] = useState<WidgetKey[]>(defaultWidgetKeys);
 
   const parseWidgetLayouts = (): WidgetLayoutConfig => {
+    // Prefer new widget_layouts column (jsonb)
+    const widgetLayoutsData = (dashboardPrefs as any)?.widget_layouts;
+    if (widgetLayoutsData && typeof widgetLayoutsData === "object") {
+      return widgetLayoutsData as WidgetLayoutConfig;
+    }
+    // Fallback to legacy layout_view parsing
     if (!dashboardPrefs?.layout_view) return {};
     if (typeof dashboardPrefs.layout_view === "object") {
       return dashboardPrefs.layout_view as WidgetLayoutConfig;
@@ -179,7 +217,7 @@ const UserDashboard = () => {
           return parsed as WidgetLayoutConfig;
         }
       } catch {
-        // Legacy string value
+        // Legacy string value (e.g., "overview")
       }
     }
     return {};
@@ -223,7 +261,7 @@ const UserDashboard = () => {
     setVisibleWidgets(nextVisible);
     setWidgetOrder(nextOrder);
     setWidgetLayouts(compactedLayouts);
-  }, [user?.id, dashboardPrefs?.visible_widgets, dashboardPrefs?.card_order, dashboardPrefs?.layout_view]);
+  }, [user?.id, dashboardPrefs?.visible_widgets, dashboardPrefs?.card_order, (dashboardPrefs as any)?.widget_layouts, dashboardPrefs?.layout_view]);
 
   const savePreferencesMutation = useMutation({
     mutationFn: async ({ widgets, order, layouts }: { widgets: WidgetKey[], order: WidgetKey[], layouts: WidgetLayoutConfig }) => {
@@ -234,9 +272,9 @@ const UserDashboard = () => {
           user_id: user.id,
           visible_widgets: widgets,
           card_order: order,
-          layout_view: JSON.stringify(layouts),
+          widget_layouts: layouts,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' })
+        } as any, { onConflict: 'user_id' })
         .select();
       if (error) throw error;
       return data;
@@ -620,29 +658,89 @@ const UserDashboard = () => {
     enabled: !!user?.id
   });
 
-  // Weekly summary
+  // Weekly summary view mode state
+  const [weeklySummaryView, setWeeklySummaryView] = useState<'thisWeek' | 'allTime'>('thisWeek');
+  
+  // Recent activities toggle state (for admin only)
+  const [showAllActivities, setShowAllActivities] = useState(false);
+
+  // Weekly summary with comparison data
   const { data: weeklySummary } = useQuery({
-    queryKey: ['user-weekly-summary', user?.id],
+    queryKey: ['user-weekly-summary-enhanced', user?.id],
     queryFn: async () => {
-      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+      const now = new Date();
+      const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
       const startStr = weekStart.toISOString();
       const endStr = weekEnd.toISOString();
       
-      const [leadsRes, contactsRes, dealsRes, meetingsRes, tasksRes] = await Promise.all([
+      // Last week dates
+      const lastWeekStart = new Date(weekStart);
+      lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(weekEnd);
+      lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
+      const lastStartStr = lastWeekStart.toISOString();
+      const lastEndStr = lastWeekEnd.toISOString();
+      
+      // Fetch this week, last week, and all time in parallel
+      const [
+        // This week
+        leadsThisWeek, contactsThisWeek, accountsThisWeek, dealsThisWeek, meetingsThisWeek, tasksThisWeek,
+        // Last week
+        leadsLastWeek, contactsLastWeek, accountsLastWeek, dealsLastWeek, meetingsLastWeek, tasksLastWeek,
+        // All time
+        leadsAllTime, contactsAllTime, accountsAllTime, dealsAllTime, meetingsAllTime, tasksAllTime
+      ] = await Promise.all([
+        // This week
         supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', startStr).lte('created_time', endStr),
         supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', startStr).lte('created_time', endStr),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', startStr).lte('created_at', endStr),
         supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', startStr).lte('created_at', endStr),
         supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed').gte('start_time', startStr).lte('start_time', endStr),
         supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed').gte('completed_at', startStr).lte('completed_at', endStr),
+        // Last week
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', lastStartStr).lte('created_time', lastEndStr),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_time', lastStartStr).lte('created_time', lastEndStr),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', lastStartStr).lte('created_at', lastEndStr),
+        supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).gte('created_at', lastStartStr).lte('created_at', lastEndStr),
+        supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed').gte('start_time', lastStartStr).lte('start_time', lastEndStr),
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed').gte('completed_at', lastStartStr).lte('completed_at', lastEndStr),
+        // All time
+        supabase.from('leads').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('deals').select('id', { count: 'exact', head: true }).eq('created_by', user?.id),
+        supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('created_by', user?.id).eq('status', 'completed'),
+        supabase.from('tasks').select('id', { count: 'exact', head: true }).or(`assigned_to.eq.${user?.id},created_by.eq.${user?.id}`).eq('status', 'completed'),
       ]);
       
       return {
-        newLeads: leadsRes.count || 0,
-        newContacts: contactsRes.count || 0,
-        newDeals: dealsRes.count || 0,
-        meetingsCompleted: meetingsRes.count || 0,
-        tasksCompleted: tasksRes.count || 0,
+        thisWeek: {
+          leads: leadsThisWeek.count || 0,
+          contacts: contactsThisWeek.count || 0,
+          accounts: accountsThisWeek.count || 0,
+          deals: dealsThisWeek.count || 0,
+          meetings: meetingsThisWeek.count || 0,
+          tasks: tasksThisWeek.count || 0,
+        },
+        lastWeek: {
+          leads: leadsLastWeek.count || 0,
+          contacts: contactsLastWeek.count || 0,
+          accounts: accountsLastWeek.count || 0,
+          deals: dealsLastWeek.count || 0,
+          meetings: meetingsLastWeek.count || 0,
+          tasks: tasksLastWeek.count || 0,
+        },
+        allTime: {
+          leads: leadsAllTime.count || 0,
+          contacts: contactsAllTime.count || 0,
+          accounts: accountsAllTime.count || 0,
+          deals: dealsAllTime.count || 0,
+          meetings: meetingsAllTime.count || 0,
+          tasks: tasksAllTime.count || 0,
+        },
+        weekStart,
+        weekEnd,
       };
     },
     enabled: !!user?.id
@@ -671,16 +769,22 @@ const UserDashboard = () => {
   };
 
   const { data: recentActivities } = useQuery({
-    queryKey: ['user-recent-activities', user?.id, userProfiles],
+    queryKey: ['user-recent-activities', user?.id, userProfiles, showAllActivities],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('security_audit_log')
         .select('id, action, resource_type, resource_id, created_at, details, user_id')
-        .eq('user_id', user?.id)
         .in('action', ['CREATE', 'UPDATE', 'DELETE'])
         .in('resource_type', ['contacts', 'leads', 'deals', 'accounts', 'meetings', 'tasks'])
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(10);
+      
+      // Only filter by user_id if not showing all activities
+      if (!showAllActivities) {
+        query = query.eq('user_id', user?.id);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
 
       return (data || []).map(log => {
@@ -716,16 +820,19 @@ const UserDashboard = () => {
           activity_type: log.action,
           activity_date: log.created_at,
           resource_type: log.resource_type,
+          user_id: log.user_id,
         };
       });
     },
     enabled: !!user?.id && !!userProfiles
   });
 
+  const userCurrency = userPreferences?.currency || 'INR';
+  
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'EUR',
+      currency: userCurrency,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0
     }).format(amount);
@@ -755,7 +862,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Leads</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/leads')}
+              >
+                My Leads
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Lead
               </Button>
@@ -799,7 +911,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Contacts</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/contacts')}
+              >
+                My Contacts
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setContactModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Contact
               </Button>
@@ -843,7 +960,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Deals</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/deals')}
+              >
+                My Deals
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && navigate('/deals')}>
                 View All
               </Button>
@@ -887,7 +1009,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Accounts</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/accounts')}
+              >
+                My Accounts
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Account
               </Button>
@@ -954,6 +1081,18 @@ const UserDashboard = () => {
 
       case "todaysAgenda":
         const totalAgendaItems = (todaysMeetings?.length || 0) + (todaysTasks?.length || 0) + (overdueTasks?.length || 0);
+        const handleQuickCompleteTask = async (taskId: string, e: React.MouseEvent) => {
+          e.stopPropagation();
+          try {
+            await supabase.from('tasks').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', taskId);
+            queryClient.invalidateQueries({ queryKey: ['user-todays-tasks', user?.id] });
+            queryClient.invalidateQueries({ queryKey: ['user-overdue-tasks', user?.id] });
+            queryClient.invalidateQueries({ queryKey: ['user-task-reminders-enhanced', user?.id] });
+            toast.success("Task completed");
+          } catch (error) {
+            toast.error("Failed to complete task");
+          }
+        };
         return (
           <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
@@ -961,52 +1100,126 @@ const UserDashboard = () => {
                 <CalendarClock className="w-4 h-4 text-primary flex-shrink-0" />
                 Today's Agenda
               </CardTitle>
-              <span className="text-[9px] text-muted-foreground flex-shrink-0">{format(new Date(), 'EEE, MMM d')}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[9px] text-muted-foreground">{format(new Date(), 'EEE, MMM d')}</span>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => !isResizeMode && navigate('/tasks')}>
+                        <ListTodo className="w-3 h-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View all tasks</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {totalAgendaItems > 0 ? (
-                <div className="flex-1 min-h-0 overflow-hidden space-y-1">
-                  {(overdueTasks?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-[9px] font-medium text-red-600 mb-0.5">⚠️ Overdue ({overdueTasks?.length})</p>
-                      {overdueTasks?.slice(0, 1).map((task: any) => (
-                        <div key={task.id} className="text-[9px] p-1 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 truncate">
-                          {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(todaysMeetings?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-[9px] font-medium text-muted-foreground mb-0.5">Meetings ({todaysMeetings?.length})</p>
-                      {todaysMeetings?.slice(0, 1).map((meeting: any) => (
-                        <div key={meeting.id} className="text-[9px] p-1 rounded bg-blue-50 dark:bg-blue-900/20 flex items-center gap-1">
-                          <Calendar className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
-                          <span className="truncate flex-1 min-w-0">{meeting.subject}</span>
-                          <span className="text-muted-foreground flex-shrink-0">{format(new Date(meeting.start_time), 'HH:mm')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {(todaysTasks?.length || 0) > 0 && (
-                    <div>
-                      <p className="text-[9px] font-medium text-muted-foreground mb-0.5">Tasks Due ({todaysTasks?.length})</p>
-                      {todaysTasks?.slice(0, 1).map((task: any) => (
-                        <div key={task.id} className="text-[9px] p-1 rounded bg-orange-50 dark:bg-orange-900/20 truncate">
-                          {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-1.5 pr-2">
+                    {(overdueTasks?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-red-600 mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/tasks?filter=overdue')}
+                        >
+                          ⚠️ Overdue ({overdueTasks?.length})
+                        </p>
+                        {overdueTasks?.slice(0, 3).map((task: any) => (
+                          <div 
+                            key={task.id} 
+                            className="text-[9px] p-1.5 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 mb-1 flex items-center gap-1 group cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedTask(task); setTaskModalOpen(true); }}}
+                          >
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button 
+                                    className="w-3.5 h-3.5 rounded border border-red-300 dark:border-red-600 hover:bg-green-500 hover:border-green-500 flex items-center justify-center flex-shrink-0 transition-colors"
+                                    onClick={(e) => handleQuickCompleteTask(task.id, e)}
+                                  >
+                                    <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Mark complete</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <span className="truncate flex-1">{task.title}</span>
+                            <span className="text-[8px] text-red-500 flex-shrink-0">{format(new Date(task.due_date), 'MMM d')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(todaysMeetings?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-muted-foreground mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/meetings')}
+                        >
+                          <Calendar className="w-2.5 h-2.5 inline mr-0.5" />
+                          Meetings ({todaysMeetings?.length})
+                        </p>
+                        {todaysMeetings?.slice(0, 3).map((meeting: any) => (
+                          <div 
+                            key={meeting.id} 
+                            className="text-[9px] p-1.5 rounded bg-blue-50 dark:bg-blue-900/20 flex items-center gap-1 mb-1 cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedMeeting(meeting); setMeetingModalOpen(true); }}}
+                          >
+                            <Calendar className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                            <span className="truncate flex-1 min-w-0 text-blue-700 dark:text-blue-300">{meeting.subject}</span>
+                            <span className="text-blue-600 font-medium flex-shrink-0">{format(new Date(meeting.start_time), 'HH:mm')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(todaysTasks?.length || 0) > 0 && (
+                      <div>
+                        <p 
+                          className="text-[9px] font-medium text-muted-foreground mb-0.5 cursor-pointer hover:underline"
+                          onClick={() => !isResizeMode && navigate('/tasks?dueDate=today')}
+                        >
+                          <ListTodo className="w-2.5 h-2.5 inline mr-0.5" />
+                          Tasks Due ({todaysTasks?.length})
+                        </p>
+                        {todaysTasks?.slice(0, 3).map((task: any) => (
+                          <div 
+                            key={task.id} 
+                            className="text-[9px] p-1.5 rounded bg-orange-50 dark:bg-orange-900/20 flex items-center gap-1 mb-1 group cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors"
+                            onClick={() => { if (!isResizeMode) { setSelectedTask(task); setTaskModalOpen(true); }}}
+                          >
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button 
+                                    className="w-3.5 h-3.5 rounded border border-orange-300 dark:border-orange-600 hover:bg-green-500 hover:border-green-500 flex items-center justify-center flex-shrink-0 transition-colors"
+                                    onClick={(e) => handleQuickCompleteTask(task.id, e)}
+                                  >
+                                    <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent>Mark complete</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <span className="truncate flex-1 text-orange-700 dark:text-orange-300">{task.title}</span>
+                            {task.priority === 'high' && <span className="text-[8px] px-1 py-0.5 rounded bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-200 flex-shrink-0">High</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
               ) : (
-                <div className="flex-1 min-h-0 flex items-center justify-center">
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2">
                   <EmptyState
                     title="Clear day ahead"
                     description="No meetings or tasks scheduled for today"
                     illustration="calendar"
                     variant="compact"
                   />
+                  <Button variant="outline" size="sm" className="text-[10px] h-6" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
+                    <Plus className="w-3 h-3 mr-1" /> Add Task
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -1017,7 +1230,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Meetings</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/meetings')}
+              >
+                My Meetings
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Meeting
               </Button>
@@ -1061,7 +1279,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">My Tasks</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/tasks')}
+              >
+                My Tasks
+              </CardTitle>
               <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
                 <Plus className="w-3 h-3" /> Add Task
               </Button>
@@ -1102,35 +1325,163 @@ const UserDashboard = () => {
         );
 
       case "recentActivities":
+        const getActivityIcon = (action: string, resourceType: string) => {
+          const iconClass = "w-3 h-3";
+          if (action === 'CREATE') return <Plus className={`${iconClass} text-green-600`} />;
+          if (action === 'DELETE') return <X className={`${iconClass} text-red-600`} />;
+          // UPDATE
+          switch (resourceType) {
+            case 'leads': return <Users className={`${iconClass} text-blue-600`} />;
+            case 'contacts': return <Users className={`${iconClass} text-green-600`} />;
+            case 'deals': return <Briefcase className={`${iconClass} text-purple-600`} />;
+            case 'accounts': return <Building2 className={`${iconClass} text-indigo-600`} />;
+            case 'meetings': return <Calendar className={`${iconClass} text-teal-600`} />;
+            case 'tasks': return <ListTodo className={`${iconClass} text-orange-600`} />;
+            default: return <Activity className={`${iconClass} text-primary`} />;
+          }
+        };
+        const getActivityBadge = (action: string) => {
+          if (action === 'CREATE') return { text: 'Created', class: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' };
+          if (action === 'DELETE') return { text: 'Deleted', class: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' };
+          return { text: 'Updated', class: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' };
+        };
+        const getIconBgColor = (action: string, resourceType: string) => {
+          if (action === 'CREATE') return 'bg-green-100 dark:bg-green-900/30';
+          if (action === 'DELETE') return 'bg-red-100 dark:bg-red-900/30';
+          switch (resourceType) {
+            case 'leads': return 'bg-blue-100 dark:bg-blue-900/30';
+            case 'contacts': return 'bg-emerald-100 dark:bg-emerald-900/30';
+            case 'deals': return 'bg-purple-100 dark:bg-purple-900/30';
+            case 'accounts': return 'bg-indigo-100 dark:bg-indigo-900/30';
+            case 'meetings': return 'bg-teal-100 dark:bg-teal-900/30';
+            case 'tasks': return 'bg-orange-100 dark:bg-orange-900/30';
+            default: return 'bg-muted';
+          }
+        };
+        const formatRelativeTime = (dateStr: string) => {
+          const date = new Date(dateStr);
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHrs = Math.floor(diffMs / 3600000);
+          const diffDays = Math.floor(diffMs / 86400000);
+          
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHrs < 24) return `${diffHrs}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return format(date, 'MMM d');
+        };
+        const getActivityUserName = (activityUserId: string) => {
+          const profile = userProfiles?.find(p => p.id === activityUserId);
+          return profile?.full_name || 'Unknown User';
+        };
+        const navigateToEntity = (resourceType: string) => {
+          if (isResizeMode) return;
+          switch (resourceType) {
+            case 'leads': navigate('/leads'); break;
+            case 'contacts': navigate('/contacts'); break;
+            case 'deals': navigate('/deals'); break;
+            case 'accounts': navigate('/accounts'); break;
+            case 'meetings': navigate('/meetings'); break;
+            case 'tasks': navigate('/tasks'); break;
+          }
+        };
         return (
           <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="flex items-center gap-1.5 text-sm font-medium truncate">
+              <CardTitle 
+                className="flex items-center gap-1.5 text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/settings?tab=audit')}
+              >
                 <Activity className="w-4 h-4 text-primary flex-shrink-0" />
                 Recent Activities
               </CardTitle>
-              <Button variant="ghost" size="sm" className="h-6 text-xs flex-shrink-0" onClick={() => !isResizeMode && navigate('/notifications')}>View All</Button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {isAdmin && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                      {showAllActivities ? 'All' : 'My'}
+                    </span>
+                    <Switch
+                      checked={showAllActivities}
+                      onCheckedChange={setShowAllActivities}
+                      className="scale-75 data-[state=checked]:bg-primary"
+                    />
+                  </div>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 text-xs flex-shrink-0" onClick={() => !isResizeMode && navigate('/settings?tab=audit')}>
+                  View All
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {recentActivities && recentActivities.length > 0 ? (
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
-                  {recentActivities.slice(0, 5).map((activity) => (
-                    <div key={activity.id} className="flex items-start gap-1.5 p-1.5 rounded bg-muted/50">
-                      <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Activity className="w-2.5 h-2.5 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[10px] font-medium line-clamp-2">{activity.subject}</p>
-                        <p className="text-[9px] text-muted-foreground">{format(new Date(activity.activity_date), 'MMM d, HH:mm')}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-2 pr-2">
+                    {recentActivities.slice(0, 8).map((activity) => {
+                      const badge = getActivityBadge(activity.activity_type);
+                      const isOwnActivity = activity.user_id === user?.id;
+                      return (
+                        <div 
+                          key={activity.id} 
+                          className="flex gap-3 p-2.5 rounded-lg bg-muted/40 hover:bg-muted hover:shadow-sm cursor-pointer transition-all"
+                          onClick={() => navigateToEntity(activity.resource_type)}
+                        >
+                          {/* Left: Icon */}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${getIconBgColor(activity.activity_type, activity.resource_type)}`}>
+                            {getActivityIcon(activity.activity_type, activity.resource_type)}
+                          </div>
+                          
+                          {/* Right: Content */}
+                          <div className="flex-1 min-w-0">
+                            {/* Top row: Badge + Resource + Timestamp */}
+                            <div className="flex items-center justify-between gap-2 mb-0.5">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="text-[10px] text-muted-foreground capitalize font-medium truncate">
+                                  {activity.resource_type}
+                                </span>
+                              </div>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${badge.class}`}>
+                                {badge.text}
+                              </span>
+                              <TooltipProvider delayDuration={100}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-[9px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                                      {formatRelativeTime(activity.activity_date)}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="text-xs">
+                                    {format(new Date(activity.activity_date), 'MMM d, yyyy HH:mm')}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            
+                            {/* User name (All Activities mode only, for non-self activities) */}
+                            {showAllActivities && !isOwnActivity && (
+                              <p className="text-[9px] text-muted-foreground mb-0.5 flex items-center gap-1">
+                                <User className="w-2.5 h-2.5" />
+                                {getActivityUserName(activity.user_id)}
+                              </p>
+                            )}
+                            
+                            {/* Description */}
+                            <p className="text-[11px] font-medium line-clamp-2 leading-snug">
+                              {activity.subject}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
               ) : (
                 <div className="flex-1 min-h-0 flex items-center justify-center">
                   <EmptyState
-                    title="No recent activities"
-                    description="Activities will appear as you work"
+                    title={showAllActivities ? "No team activities" : "No recent activities"}
+                    description={showAllActivities ? "Team activities will appear here" : "Activities will appear as you work"}
                     illustration="activities"
                     variant="compact"
                   />
@@ -1144,7 +1495,12 @@ const UserDashboard = () => {
         return (
           <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">Email Statistics</CardTitle>
+              <CardTitle 
+                className="text-sm font-medium truncate cursor-pointer hover:text-primary transition-colors"
+                onClick={() => !isResizeMode && navigate('/settings?tab=email-history')}
+              >
+                Email Statistics
+              </CardTitle>
               <Mail className="w-4 h-4 text-blue-600 flex-shrink-0" />
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col justify-center gap-2">
@@ -1171,40 +1527,142 @@ const UserDashboard = () => {
         );
 
       case "weeklySummary":
+        const summaryWeekStart = weeklySummary?.weekStart || startOfWeek(new Date(), { weekStartsOn: 1 });
+        const summaryWeekEnd = weeklySummary?.weekEnd || endOfWeek(new Date(), { weekStartsOn: 1 });
+        const currentData = weeklySummaryView === 'thisWeek' ? weeklySummary?.thisWeek : weeklySummary?.allTime;
+        const lastWeekData = weeklySummary?.lastWeek;
+        const allZeros = weeklySummaryView === 'thisWeek' && 
+          (currentData?.leads || 0) === 0 && 
+          (currentData?.contacts || 0) === 0 && 
+          (currentData?.accounts || 0) === 0 && 
+          (currentData?.deals || 0) === 0 && 
+          (currentData?.meetings || 0) === 0 && 
+          (currentData?.tasks || 0) === 0;
+
+        const getTrendIndicator = (current: number, previous: number) => {
+          if (weeklySummaryView !== 'thisWeek') return null;
+          const diff = current - previous;
+          if (diff > 0) return { icon: TrendingUp, color: 'text-green-500', diff: `+${diff}` };
+          if (diff < 0) return { icon: TrendingDown, color: 'text-red-500', diff: `${diff}` };
+          return { icon: Minus, color: 'text-muted-foreground', diff: '0' };
+        };
+
+        // Build navigation URLs with date filters for "this week" view
+        const buildNavUrl = (basePath: string) => {
+          if (weeklySummaryView === 'thisWeek') {
+            const fromStr = summaryWeekStart.toISOString();
+            const toStr = summaryWeekEnd.toISOString();
+            return `${basePath}?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}&status=all`;
+          }
+          return `${basePath}?status=all`;
+        };
+
+        const summaryItems = [
+          { key: 'leads', label: 'Leads', color: 'blue', value: currentData?.leads || 0, lastWeek: lastWeekData?.leads || 0, nav: buildNavUrl('/leads'), tooltip: weeklySummaryView === 'thisWeek' ? 'New leads created this week' : 'Total leads (all time)', action: () => setLeadModalOpen(true) },
+          { key: 'contacts', label: 'Contacts', color: 'green', value: currentData?.contacts || 0, lastWeek: lastWeekData?.contacts || 0, nav: buildNavUrl('/contacts'), tooltip: weeklySummaryView === 'thisWeek' ? 'New contacts added this week' : 'Total contacts (all time)', action: () => setContactModalOpen(true) },
+          { key: 'accounts', label: 'Accounts', color: 'cyan', value: currentData?.accounts || 0, lastWeek: lastWeekData?.accounts || 0, nav: buildNavUrl('/accounts'), tooltip: weeklySummaryView === 'thisWeek' ? 'New accounts created this week' : 'Total accounts (all time)', action: () => setAccountModalOpen(true) },
+          { key: 'deals', label: 'Deals', color: 'purple', value: currentData?.deals || 0, lastWeek: lastWeekData?.deals || 0, nav: buildNavUrl('/deals'), tooltip: weeklySummaryView === 'thisWeek' ? 'New deals created this week' : 'Total deals (all time)', action: () => navigate('/deals') },
+          { key: 'meetings', label: 'Meetings', color: 'indigo', value: currentData?.meetings || 0, lastWeek: lastWeekData?.meetings || 0, nav: buildNavUrl('/meetings'), tooltip: weeklySummaryView === 'thisWeek' ? 'Meetings completed this week' : 'Meetings completed (all time)', action: () => setCreateMeetingModalOpen(true) },
+          { key: 'tasks', label: 'Tasks', color: 'emerald', value: currentData?.tasks || 0, lastWeek: lastWeekData?.tasks || 0, nav: buildNavUrl('/tasks'), tooltip: weeklySummaryView === 'thisWeek' ? 'Tasks completed this week' : 'Tasks completed (all time)', action: () => { setSelectedTask(null); setTaskModalOpen(true); } },
+        ];
+
         return (
           <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
-              <CardTitle className="text-sm font-medium truncate">This Week</CardTitle>
-              <ListTodo className="w-4 h-4 text-teal-600 flex-shrink-0" />
-            </CardHeader>
-            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col justify-center">
-              <div className="grid grid-cols-5 gap-1 text-center">
-                <div className="p-1 rounded bg-blue-50 dark:bg-blue-950/20 flex flex-col items-center justify-center">
-                  <p className="text-sm font-bold text-blue-600 leading-tight">{weeklySummary?.newLeads || 0}</p>
-                  <p className="text-[8px] text-muted-foreground leading-tight">Leads</p>
-                </div>
-                <div className="p-1 rounded bg-green-50 dark:bg-green-950/20 flex flex-col items-center justify-center">
-                  <p className="text-sm font-bold text-green-600 leading-tight">{weeklySummary?.newContacts || 0}</p>
-                  <p className="text-[8px] text-muted-foreground leading-tight">Contacts</p>
-                </div>
-                <div className="p-1 rounded bg-purple-50 dark:bg-purple-950/20 flex flex-col items-center justify-center">
-                  <p className="text-sm font-bold text-purple-600 leading-tight">{weeklySummary?.newDeals || 0}</p>
-                  <p className="text-[8px] text-muted-foreground leading-tight">Deals</p>
-                </div>
-                <div className="p-1 rounded bg-indigo-50 dark:bg-indigo-950/20 flex flex-col items-center justify-center">
-                  <p className="text-sm font-bold text-indigo-600 leading-tight">{weeklySummary?.meetingsCompleted || 0}</p>
-                  <p className="text-[8px] text-muted-foreground leading-tight">Meetings</p>
-                </div>
-                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/20 flex flex-col items-center justify-center">
-                  <p className="text-sm font-bold text-emerald-600 leading-tight">{weeklySummary?.tasksCompleted || 0}</p>
-                  <p className="text-[8px] text-muted-foreground leading-tight">Tasks</p>
+              <CardTitle className="flex items-center gap-1.5 text-sm font-medium truncate">
+                {weeklySummaryView === 'thisWeek' ? 'Activity This Week' : 'Activity All Time'}
+              </CardTitle>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {weeklySummaryView === 'thisWeek' && (
+                  <span className="text-[8px] text-muted-foreground">{format(summaryWeekStart, 'MMM d')} - {format(summaryWeekEnd, 'MMM d')}</span>
+                )}
+                <div className="flex rounded-md overflow-hidden border border-border text-[8px]">
+                  <button
+                    className={`px-1.5 py-0.5 transition-colors ${weeklySummaryView === 'thisWeek' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => setWeeklySummaryView('thisWeek')}
+                  >
+                    Week
+                  </button>
+                  <button
+                    className={`px-1.5 py-0.5 transition-colors ${weeklySummaryView === 'allTime' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    onClick={() => setWeeklySummaryView('allTime')}
+                  >
+                    All
+                  </button>
                 </div>
               </div>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col justify-center">
+              {allZeros ? (
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <p className="text-[10px] text-muted-foreground text-center">No activity yet this week</p>
+                  <div className="flex flex-wrap justify-center gap-1">
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Lead
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setContactModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Contact
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Account
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => !isResizeMode && setCreateMeetingModalOpen(true)}>
+                      <Plus className="w-2.5 h-2.5" /> Meeting
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-5 text-[9px] px-2 gap-0.5" onClick={() => { if (!isResizeMode) { setSelectedTask(null); setTaskModalOpen(true); }}}>
+                      <Plus className="w-2.5 h-2.5" /> Task
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-6 gap-1 text-center">
+                  {summaryItems.map((item) => {
+                    const trend = getTrendIndicator(item.value, item.lastWeek);
+                    const TrendIcon = trend?.icon;
+                    return (
+                      <TooltipProvider key={item.key} delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div 
+                              className={`p-1.5 rounded bg-${item.color}-50 dark:bg-${item.color}-950/20 flex flex-col items-center justify-center cursor-pointer hover:bg-${item.color}-100 dark:hover:bg-${item.color}-950/40 transition-colors relative`}
+                              onClick={() => !isResizeMode && navigate(item.nav)}
+                            >
+                              <p className={`text-sm font-bold text-${item.color}-600 leading-tight`}>{item.value}</p>
+                              <p className="text-[8px] text-muted-foreground leading-tight">{item.label}</p>
+                              {TrendIcon && weeklySummaryView === 'thisWeek' && (
+                                <div className={`absolute -top-0.5 -right-0.5 flex items-center ${trend.color}`}>
+                                  <TrendIcon className="w-2.5 h-2.5" />
+                                </div>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" sideOffset={8} className="z-[100]">
+                            <p className="whitespace-nowrap">{item.tooltip}</p>
+                            {weeklySummaryView === 'thisWeek' && (
+                              <p className="text-[10px] text-muted-foreground">vs last week: {trend?.diff}</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
 
       case "followUpsDue":
+        const handleCompleteFollowUp = async (followUpId: string, e: React.MouseEvent) => {
+          e.stopPropagation();
+          try {
+            await supabase.from('meeting_follow_ups').update({ status: 'completed' }).eq('id', followUpId);
+            queryClient.invalidateQueries({ queryKey: ['user-follow-ups-due', user?.id] });
+            toast.success("Follow-up completed");
+          } catch (error) {
+            toast.error("Failed to complete follow-up");
+          }
+        };
         return (
           <Card className="h-full animate-fade-in overflow-hidden flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
@@ -1215,24 +1673,65 @@ const UserDashboard = () => {
                     {followUpsDue?.overdue} overdue
                   </span>
                 )}
-                <ClipboardList className="w-4 h-4 text-amber-600" />
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => !isResizeMode && navigate('/meetings')}>
+                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>View all meetings</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
               {followUpsDue?.followUps && followUpsDue.followUps.length > 0 ? (
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5">
-                  {followUpsDue.followUps.map((followUp: any) => {
-                    const isOverdue = followUp.due_date && isBefore(new Date(followUp.due_date), new Date());
-                    return (
-                      <div key={followUp.id} className={`p-1.5 rounded text-[10px] ${isOverdue ? 'bg-red-50 dark:bg-red-900/20' : 'bg-muted/50'}`}>
-                        <p className="font-medium truncate">{followUp.title}</p>
-                        <p className={`text-[9px] text-muted-foreground ${isOverdue ? 'text-red-600' : ''}`}>
-                          Due: {followUp.due_date ? format(new Date(followUp.due_date), 'MMM d') : 'No date'}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+                <ScrollArea className="flex-1 min-h-0">
+                  <div className="space-y-1.5 pr-2">
+                    {followUpsDue.followUps.map((followUp: any) => {
+                      const isOverdue = followUp.due_date && isBefore(new Date(followUp.due_date), new Date());
+                      return (
+                        <div 
+                          key={followUp.id} 
+                          className={`p-1.5 rounded text-[10px] flex items-start gap-1.5 group cursor-pointer transition-colors ${isOverdue ? 'bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30' : 'bg-muted/50 hover:bg-muted'}`}
+                          onClick={async () => {
+                            if (isResizeMode) return;
+                            // Fetch meeting details and open modal
+                            const { data: meeting } = await supabase.from('meetings').select('*').eq('id', followUp.meeting_id).single();
+                            if (meeting) {
+                              setSelectedMeeting(meeting);
+                              setMeetingModalOpen(true);
+                            }
+                          }}
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button 
+                                  className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isOverdue ? 'border-red-300 dark:border-red-600 hover:bg-green-500 hover:border-green-500' : 'border-muted-foreground/30 hover:bg-green-500 hover:border-green-500'}`}
+                                  onClick={(e) => handleCompleteFollowUp(followUp.id, e)}
+                                >
+                                  <Check className="w-2 h-2 opacity-0 group-hover:opacity-100 text-white" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Mark complete</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{followUp.title}</p>
+                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
+                              <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
+                                {isOverdue ? '⚠️ Overdue: ' : 'Due: '}
+                                {followUp.due_date ? format(new Date(followUp.due_date), 'MMM d') : 'No date'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
               ) : (
                 <div className="flex-1 min-h-0 flex items-center justify-center text-muted-foreground text-[10px]">
                   No pending follow-ups
@@ -1248,29 +1747,24 @@ const UserDashboard = () => {
   };
 
   return (
-    <div className="p-4 space-y-4 w-full max-w-full overflow-x-hidden" ref={containerRef}>
-      {/* Welcome Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
-            Welcome back{userName ? `, ${userName}` : ''}!
-          </h1>
-        </div>
+    <div className="px-2 sm:px-4 py-4 space-y-4 w-full overflow-x-hidden" ref={containerRef}>
+      {/* Customize Controls - shown at top when hideHeader is true, otherwise part of header */}
+      <div className="flex items-center justify-end flex-wrap gap-2">
         <div className="flex gap-2 flex-shrink-0 items-center">
           {isResizeMode ? (
             <>
-              <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-1.5 hidden sm:flex items-center">
+              <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-1.5 flex items-center">
                 <p className="text-xs text-primary font-medium flex items-center gap-1.5">
                   <Settings2 className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Drag to move, resize edges, or press Escape to cancel</span>
-                  <span className="md:hidden">Edit mode</span>
+                  <span className="hidden sm:inline">Drag to move, resize edges, or press Escape to cancel</span>
+                  <span className="sm:hidden">Edit mode</span>
                 </p>
               </div>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="gap-2">
                     <Plus className="w-4 h-4" />
-                    Add Widget
+                    <span className="hidden sm:inline">Add Widget</span>
                     {pendingWidgetChanges.size > 0 && (
                       <span className="bg-primary text-primary-foreground text-xs px-1.5 py-0.5 rounded-full">
                         {pendingWidgetChanges.size}
@@ -1308,10 +1802,10 @@ const UserDashboard = () => {
                 </PopoverContent>
               </Popover>
               <Button variant="outline" onClick={handleCancelCustomize} className="gap-2">
-                <X className="w-4 h-4" /> Cancel
+                <X className="w-4 h-4" /> <span className="hidden sm:inline">Cancel</span>
               </Button>
               <Button onClick={handleSaveLayout} className="gap-2" disabled={savePreferencesMutation.isPending}>
-                <Check className="w-4 h-4" /> {savePreferencesMutation.isPending ? 'Saving...' : 'Save'}
+                <Check className="w-4 h-4" /> <span className="hidden sm:inline">{savePreferencesMutation.isPending ? 'Saving...' : 'Save'}</span>
               </Button>
             </>
           ) : (

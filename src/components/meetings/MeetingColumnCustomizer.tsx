@@ -5,44 +5,43 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 
-export interface LeadColumnConfig {
+export interface MeetingColumnConfig {
   field: string;
   label: string;
   visible: boolean;
   order: number;
 }
 
-interface LeadColumnCustomizerProps {
+interface MeetingColumnCustomizerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  columns: LeadColumnConfig[];
-  onColumnsChange: (columns: LeadColumnConfig[]) => void;
-  onSave?: (columns: LeadColumnConfig[]) => Promise<unknown>;
+  columns: MeetingColumnConfig[];
+  onColumnsChange: (columns: MeetingColumnConfig[]) => void;
+  onSave?: (columns: MeetingColumnConfig[]) => Promise<unknown>;
   isSaving?: boolean;
 }
 
-export const defaultLeadColumns: LeadColumnConfig[] = [
-  { field: 'lead_name', label: 'Lead Name', visible: true, order: 0 },
-  { field: 'account_company_name', label: 'Company Name', visible: true, order: 1 },
-  { field: 'position', label: 'Position', visible: true, order: 2 },
-  { field: 'email', label: 'Email', visible: true, order: 3 },
-  { field: 'phone_no', label: 'Phone', visible: true, order: 4 },
-  { field: 'contact_owner', label: 'Lead Owner', visible: true, order: 5 },
-  { field: 'lead_status', label: 'Lead Status', visible: true, order: 6 },
-  { field: 'contact_source', label: 'Source', visible: true, order: 7 },
+export const defaultMeetingColumns: MeetingColumnConfig[] = [
+  { field: 'subject', label: 'Subject', visible: true, order: 0 },
+  { field: 'date', label: 'Date', visible: true, order: 1 },
+  { field: 'time', label: 'Time', visible: true, order: 2 },
+  { field: 'lead_contact', label: 'Lead/Contact', visible: true, order: 3 },
+  { field: 'status', label: 'Status', visible: true, order: 4 },
+  { field: 'outcome', label: 'Outcome', visible: true, order: 5 },
+  { field: 'join_url', label: 'Join URL', visible: true, order: 6 },
+  { field: 'organizer', label: 'Organizer', visible: true, order: 7 },
 ];
 
-export const LeadColumnCustomizer = ({ 
+export const MeetingColumnCustomizer = ({ 
   open, 
   onOpenChange, 
   columns, 
   onColumnsChange,
   onSave,
   isSaving = false,
-}: LeadColumnCustomizerProps) => {
-  const [localColumns, setLocalColumns] = useState<LeadColumnConfig[]>(columns);
+}: MeetingColumnCustomizerProps) => {
+  const [localColumns, setLocalColumns] = useState<MeetingColumnConfig[]>(columns);
 
-  // Sync local columns when props change
   useEffect(() => {
     setLocalColumns(columns);
   }, [columns]);
@@ -63,7 +62,7 @@ export const LeadColumnCustomizer = ({
   };
 
   const handleReset = () => {
-    setLocalColumns(defaultLeadColumns);
+    setLocalColumns(defaultMeetingColumns);
   };
 
   return (
@@ -75,7 +74,7 @@ export const LeadColumnCustomizer = ({
         
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-            <strong>Tip:</strong> Check/uncheck to show/hide columns in the lead table.
+            <strong>Tip:</strong> Check/uncheck to show/hide columns in the meetings table.
           </div>
           
           <div className="space-y-2 max-h-[400px] overflow-y-auto p-1">
