@@ -1,128 +1,161 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
-import { Users, DollarSign, TrendingUp, Target } from "lucide-react";
+import YearlyRevenueSummary from "@/components/YearlyRevenueSummary";
+import UserDashboard from "@/components/dashboard/UserDashboard";
+import { useUserRole } from "@/hooks/useUserRole";
+import { NotificationBell } from "@/components/NotificationBell";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState, useEffect } from "react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { BarChart3, LayoutDashboard } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-const salesData = [
-  { month: "Jan", sales: 4000, deals: 12 },
-  { month: "Feb", sales: 3000, deals: 9 },
-  { month: "Mar", sales: 5000, deals: 15 },
-  { month: "Apr", sales: 4500, deals: 13 },
-  { month: "May", sales: 6000, deals: 18 },
-  { month: "Jun", sales: 5500, deals: 16 },
-];
-
-const chartConfig = {
-  sales: {
-    label: "Sales",
-    color: "hsl(var(--primary))",
-  },
-  deals: {
-    label: "Deals",
-    color: "hsl(var(--secondary))",
-  },
-};
+type DashboardView = "analytics" | "overview";
 
 const Dashboard = () => {
-  const metrics = [
-    {
-      title: "Total Contacts",
-      value: "2,543",
-      change: "+12.5%",
-      icon: Users,
-    },
-    {
-      title: "Active Deals",
-      value: "127",
-      change: "+8.2%",
-      icon: Target,
-    },
-    {
-      title: "Revenue",
-      value: "$48,293",
-      change: "+23.1%",
-      icon: DollarSign,
-    },
-    {
-      title: "Conversion Rate",
-      value: "32.8%",
-      change: "+4.3%",
-      icon: TrendingUp,
-    },
-  ];
+  const { isAdmin, loading } = useUserRole();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  
+  const availableYears = [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
+  const currentYear = new Date().getFullYear();
+  const defaultYear = availableYears.includes(currentYear) ? currentYear : 2025;
+  const [selectedYear, setSelectedYear] = useState(defaultYear);
 
-  return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <div>
-          <h1 className="text-4xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground mt-2">Welcome back! Here's your CRM overview.</p>
+  // Fetch admin's dashboard preference
+  const { data: dashboardPreference, isLoading: prefLoading } = useQuery({
+    queryKey: ['dashboard-preference', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('dashboard_preferences')
+        .select('layout_view')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.layout_view as DashboardView) || 'overview';
+    },
+    enabled: !!user?.id && isAdmin,
+  });
+
+  const [currentView, setCurrentView] = useState<DashboardView>("overview");
+
+  // Update local state when preference is loaded
+  useEffect(() => {
+    if (dashboardPreference) {
+      setCurrentView(dashboardPreference);
+    }
+  }, [dashboardPreference]);
+
+  // Mutation to save dashboard preference
+  const savePreferenceMutation = useMutation({
+    mutationFn: async (view: DashboardView) => {
+      if (!user?.id) return;
+      const { error } = await supabase
+        .from('dashboard_preferences')
+        .upsert({
+          user_id: user.id,
+          layout_view: view,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard-preference', user?.id] });
+    },
+  });
+
+  const handleViewChange = (value: string) => {
+    if (value && (value === "analytics" || value === "overview")) {
+      setCurrentView(value);
+      savePreferenceMutation.mutate(value);
+    }
+  };
+
+  if (loading || (isAdmin && prefLoading)) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="h-8 w-64 rounded-md skeleton-shimmer" />
+          <div className="h-9 w-24 rounded-md skeleton-shimmer" />
         </div>
-
-        {/* Metrics Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {metrics.map((metric) => (
-            <Card key={metric.title}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
-                <metric.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{metric.value}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <span className="text-primary">{metric.change}</span> from last month
-                </p>
-              </CardContent>
-            </Card>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="h-32 rounded-lg skeleton-shimmer" style={{ animationDelay: `${i * 0.1}s` }} />
           ))}
         </div>
+      </div>
+    );
+  }
 
-        {/* Charts */}
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Monthly Sales</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={chartConfig} className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={salesData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" className="text-xs" />
-                    <YAxis className="text-xs" />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </CardContent>
-          </Card>
+  // Non-admin users only see UserDashboard
+  if (!isAdmin) {
+    return <UserDashboard />;
+  }
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Deals Closed</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={chartConfig} className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={salesData}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="month" className="text-xs" />
-                    <YAxis className="text-xs" />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="deals" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={2}
-                      dot={{ fill: "hsl(var(--primary))" }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </CardContent>
-          </Card>
+  // Admin users can toggle between views
+  return (
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 bg-background">
+        <div className="px-6 h-16 flex items-center border-b w-full">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-4">
+              <ToggleGroup 
+                type="single" 
+                value={currentView} 
+                onValueChange={handleViewChange}
+                className="bg-muted/60 border border-border rounded-lg p-1"
+              >
+                <ToggleGroupItem 
+                  value="overview" 
+                  aria-label="Dashboard Overview"
+                  className="px-3 py-1.5 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-sm data-[state=off]:text-muted-foreground"
+                >
+                  <LayoutDashboard className="w-4 h-4 mr-2" />
+                  Dashboard
+                </ToggleGroupItem>
+                <ToggleGroupItem 
+                  value="analytics" 
+                  aria-label="Revenue Analytics"
+                  className="px-3 py-1.5 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-sm data-[state=off]:text-muted-foreground"
+                >
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Revenue Analytics
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+            <div className="flex items-center gap-4">
+              <NotificationBell placement="down" size="small" />
+              {currentView === "analytics" && (
+                <Select value={selectedYear.toString()} onValueChange={value => setSelectedYear(parseInt(value))}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableYears.map(year => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
         </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        {currentView === "analytics" ? (
+          <div className="p-6 space-y-8">
+            <YearlyRevenueSummary selectedYear={selectedYear} />
+            <div className="border-t border-border" />
+          </div>
+        ) : (
+          <UserDashboard />
+        )}
       </div>
     </div>
   );
