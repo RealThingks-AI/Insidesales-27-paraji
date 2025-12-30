@@ -770,42 +770,42 @@ const UserDashboard = () => {
     switch (key) {
       case "leads":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between py-2 px-3">
-              <CardTitle className="text-sm font-medium">My Leads</CardTitle>
-              <Button variant="outline" size="sm" className="h-6 text-xs gap-1" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Leads</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setLeadModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Lead
               </Button>
             </CardHeader>
-            <CardContent className="px-3 pb-3 pt-0">
-              <div className="grid grid-cols-2 gap-1.5">
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
                 <div 
-                  className="text-center p-2 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/leads?status=New&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-blue-600">{leadsData?.new || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">New</p>
+                  <p className="text-base font-bold text-blue-600 leading-tight">{leadsData?.new || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">New</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors"
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Attempted&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-yellow-600">{leadsData?.attempted || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Attempted</p>
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{leadsData?.attempted || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Attempted</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-orange-50 dark:bg-orange-950/20 rounded cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/40 transition-colors"
+                  className="text-center p-1.5 bg-orange-50 dark:bg-orange-950/20 rounded cursor-pointer hover:bg-orange-100 dark:hover:bg-orange-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Follow-up&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-orange-600">{leadsData?.followUp || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Follow-Up</p>
+                  <p className="text-base font-bold text-orange-600 leading-tight">{leadsData?.followUp || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Follow-Up</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors"
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/leads?status=Qualified&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-green-600">{leadsData?.qualified || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Qualified</p>
+                  <p className="text-base font-bold text-green-600 leading-tight">{leadsData?.qualified || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Qualified</p>
                 </div>
               </div>
             </CardContent>
@@ -814,42 +814,42 @@ const UserDashboard = () => {
 
       case "contacts":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between py-2 px-3">
-              <CardTitle className="text-sm font-medium">My Contacts</CardTitle>
-              <Button variant="outline" size="sm" className="h-6 text-xs gap-1" onClick={() => !isResizeMode && setContactModalOpen(true)}>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Contacts</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setContactModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Contact
               </Button>
             </CardHeader>
-            <CardContent className="px-3 pb-3 pt-0">
-              <div className="grid grid-cols-2 gap-1.5">
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
                 <div 
-                  className="text-center p-2 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Website&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-blue-600">{contactsData?.bySource?.website || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Website</p>
+                  <p className="text-base font-bold text-blue-600 leading-tight">{contactsData?.bySource?.website || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Website</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-purple-50 dark:bg-purple-950/20 rounded cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-950/40 transition-colors"
+                  className="text-center p-1.5 bg-purple-50 dark:bg-purple-950/20 rounded cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Referral&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-purple-600">{contactsData?.bySource?.referral || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Referral</p>
+                  <p className="text-base font-bold text-purple-600 leading-tight">{contactsData?.bySource?.referral || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Referral</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-cyan-50 dark:bg-cyan-950/20 rounded cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-950/40 transition-colors"
+                  className="text-center p-1.5 bg-cyan-50 dark:bg-cyan-950/20 rounded cursor-pointer hover:bg-cyan-100 dark:hover:bg-cyan-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=LinkedIn&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-cyan-600">{contactsData?.bySource?.linkedin || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">LinkedIn</p>
+                  <p className="text-base font-bold text-cyan-600 leading-tight">{contactsData?.bySource?.linkedin || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">LinkedIn</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-gray-50 dark:bg-gray-950/20 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-950/40 transition-colors"
+                  className="text-center p-1.5 bg-gray-50 dark:bg-gray-950/20 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/contacts?source=Other&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-gray-600">{contactsData?.bySource?.other || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Other</p>
+                  <p className="text-base font-bold text-gray-600 leading-tight">{contactsData?.bySource?.other || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Other</p>
                 </div>
               </div>
             </CardContent>
@@ -858,42 +858,42 @@ const UserDashboard = () => {
 
       case "deals":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between py-2 px-3">
-              <CardTitle className="text-sm font-medium">My Deals</CardTitle>
-              <Button variant="outline" size="sm" className="h-6 text-xs gap-1" onClick={() => !isResizeMode && navigate('/deals')}>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Deals</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && navigate('/deals')}>
                 View All
               </Button>
             </CardHeader>
-            <CardContent className="px-3 pb-3 pt-0">
-              <div className="grid grid-cols-2 gap-1.5">
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
                 <div 
-                  className="text-center p-2 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=RFQ&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-blue-600">{dealsData?.byStage?.rfq || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">RFQ</p>
+                  <p className="text-base font-bold text-blue-600 leading-tight">{dealsData?.byStage?.rfq || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">RFQ</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors"
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Offered&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-yellow-600">{dealsData?.byStage?.offered || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Offered</p>
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{dealsData?.byStage?.offered || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Offered</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors"
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Won&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-green-600">{dealsData?.byStage?.won || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Won</p>
+                  <p className="text-base font-bold text-green-600 leading-tight">{dealsData?.byStage?.won || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Won</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors"
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/deals?stage=Lost&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-red-600">{dealsData?.byStage?.lost || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Lost</p>
+                  <p className="text-base font-bold text-red-600 leading-tight">{dealsData?.byStage?.lost || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Lost</p>
                 </div>
               </div>
             </CardContent>
@@ -902,42 +902,42 @@ const UserDashboard = () => {
 
       case "accountsSummary":
         return (
-          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between py-2 px-3">
-              <CardTitle className="text-sm font-medium">My Accounts</CardTitle>
-              <Button variant="outline" size="sm" className="h-6 text-xs gap-1" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
+          <Card className="h-full hover:shadow-lg transition-shadow animate-fade-in overflow-hidden flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between py-2 px-3 flex-shrink-0">
+              <CardTitle className="text-sm font-medium truncate">My Accounts</CardTitle>
+              <Button variant="outline" size="sm" className="h-6 text-xs gap-1 flex-shrink-0" onClick={() => !isResizeMode && setAccountModalOpen(true)}>
                 <Plus className="w-3 h-3" /> Add Account
               </Button>
             </CardHeader>
-            <CardContent className="px-3 pb-3 pt-0">
-              <div className="grid grid-cols-2 gap-1.5">
+            <CardContent className="px-3 pb-3 pt-0 flex-1 min-h-0 flex flex-col">
+              <div className="grid grid-cols-2 gap-1.5 flex-1 min-h-0">
                 <div 
-                  className="text-center p-2 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors"
+                  className="text-center p-1.5 bg-blue-50 dark:bg-blue-950/20 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=New&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-blue-600">{accountsData?.byStatus?.new || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">New</p>
+                  <p className="text-base font-bold text-blue-600 leading-tight">{accountsData?.byStatus?.new || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">New</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors"
+                  className="text-center p-1.5 bg-yellow-50 dark:bg-yellow-950/20 rounded cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Working&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-yellow-600">{accountsData?.byStatus?.working || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Working</p>
+                  <p className="text-base font-bold text-yellow-600 leading-tight">{accountsData?.byStatus?.working || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Working</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors"
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Hot&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-red-600">{accountsData?.byStatus?.hot || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Hot</p>
+                  <p className="text-base font-bold text-red-600 leading-tight">{accountsData?.byStatus?.hot || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Hot</p>
                 </div>
                 <div 
-                  className="text-center p-2 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors"
+                  className="text-center p-1.5 bg-green-50 dark:bg-green-950/20 rounded cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
                   onClick={(e) => { e.stopPropagation(); navigate('/accounts?status=Nurture&owner=me'); }}
                 >
-                  <p className="text-lg font-bold text-green-600">{accountsData?.byStatus?.nurture || 0}</p>
-                  <p className="text-[10px] text-muted-foreground">Nurture</p>
+                  <p className="text-base font-bold text-green-600 leading-tight">{accountsData?.byStatus?.nurture || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Nurture</p>
                 </div>
               </div>
             </CardContent>
