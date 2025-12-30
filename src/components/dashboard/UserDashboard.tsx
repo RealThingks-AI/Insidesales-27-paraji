@@ -567,7 +567,7 @@ const UserDashboard = () => {
         open: tasks.filter(t => t.status === 'open').length,
         inProgress: tasks.filter(t => t.status === 'in_progress').length,
         completed: tasks.filter(t => t.status === 'completed').length,
-        deferred: tasks.filter(t => t.status === 'deferred').length,
+        cancelled: tasks.filter(t => t.status === 'cancelled').length,
       };
       const today = format(new Date(), 'yyyy-MM-dd');
       const overdue = tasks.filter(t => t.due_date && t.due_date < today && ['open', 'in_progress'].includes(t.status)).length;
@@ -1090,11 +1090,11 @@ const UserDashboard = () => {
                   <p className="text-[9px] text-muted-foreground leading-tight">Completed</p>
                 </div>
                 <div 
-                  className="text-center p-1.5 bg-gray-50 dark:bg-gray-950/20 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
-                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=deferred&owner=me'); }}
+                  className="text-center p-1.5 bg-red-50 dark:bg-red-950/20 rounded cursor-pointer hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors flex flex-col items-center justify-center min-h-0"
+                  onClick={(e) => { e.stopPropagation(); navigate('/tasks?status=cancelled&owner=me'); }}
                 >
-                  <p className="text-base font-bold text-gray-600 leading-tight">{taskReminders?.byStatus?.deferred || 0}</p>
-                  <p className="text-[9px] text-muted-foreground leading-tight">Deferred</p>
+                  <p className="text-base font-bold text-red-600 leading-tight">{taskReminders?.byStatus?.cancelled || 0}</p>
+                  <p className="text-[9px] text-muted-foreground leading-tight">Cancelled</p>
                 </div>
               </div>
             </CardContent>
